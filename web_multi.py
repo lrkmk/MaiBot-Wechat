@@ -3,8 +3,16 @@
 ClawBot only allows one bound bot instance per WeChat account, so there is
 no such thing as "one shared bot contact everyone messages" — every user
 who wants to use the bot has to scan their own QR code and get their own
-ClawBot session. This server just runs one isolated WeChatBot login per
-visiting browser session and shows each of them their own QR code.
+ClawBot session.
+
+Persistence: once a login is confirmed, its credentials are filed under
+`.sessions/{account_id}.json`, keyed by the WeChat account's own iLink id
+— not by anything this server invents. On startup every such file is
+reloaded and reconnected automatically (no QR needed again).
+
+`login_id` below is *not* a persistent identity — it only exists so a
+browser tab can poll the status of its own not-yet-authenticated QR flow.
+It's discarded the moment login succeeds.
 
 Run: python web_multi.py
 Open: http://localhost:8080
@@ -13,6 +21,7 @@ Open: http://localhost:8080
 import asyncio
 import base64
 import io
+import os
 import uuid
 from pathlib import Path
 
@@ -26,8 +35,27 @@ BASE_DIR = Path(__file__).parent
 CRED_DIR = BASE_DIR / ".sessions"
 CRED_DIR.mkdir(exist_ok=True)
 
-# session_id -> {"status", "qr_url", "qr_png", "error"}
-sessions: dict[str, dict] = {}
+# The frontend (static/index.html) is meant to be deployable separately, e.g.
+# to Cloudflare Pages, while this API server runs wherever it can stay a
+# long-lived process. Set ALLOWED_ORIGIN to that frontend's origin in
+# production; "*" is fine for local development only.
+ALLOWED_ORIGIN = os.environ.get("ALLOWED_ORIGIN", "*")
+PORT = int(os.environ.get("PORT", 8080))
+
+
+@web.middleware
+async def cors_middleware(request: web.Request, handler):
+    response = await handler(request)
+    response.headers["Access-Control-Allow-Origin"] = ALLOWED_ORIGIN
+    return response
+
+# login_id -> {"status", "qr_url", "qr_png", "error"} — in-memory only,
+# scoped to a single pending (not-yet-confirmed) QR login.
+pending_logins: dict[str, dict] = {}
+
+# account_id -> running WeChatBot, for accounts currently connected
+# (just logged in, or auto-resumed from disk on startup).
+live_bots: dict[str, WeChatBot] = {}
 
 
 def render_qr_png(url: str) -> str:
@@ -39,48 +67,84 @@ def render_qr_png(url: str) -> str:
     return f"data:image/png;base64,{b64}"
 
 
-def on_qr_url(state: dict, url: str) -> None:
-    state.update(status="waiting", qr_url=url, qr_png=render_qr_png(url))
+async def run_bot(bot: WeChatBot) -> None:
+    @bot.on_message
+    async def handle(msg):
+        await dispatch(bot, msg)
+
+    await bot.start()
 
 
-async def run_session(session_id: str) -> None:
-    state = sessions[session_id]
-    cred_path = CRED_DIR / f"{session_id}.json"
+async def start_login(login_id: str) -> None:
+    """Drive one QR login attempt, then hand off to the persistent account store."""
+    state = pending_logins[login_id]
+    pending_path = CRED_DIR / f".pending-{login_id}.json"
+
+    def on_qr_url(url: str) -> None:
+        state.update(status="waiting", qr_url=url, qr_png=render_qr_png(url))
 
     bot = WeChatBot(
-        cred_path=cred_path,
-        on_qr_url=lambda url: on_qr_url(state, url),
+        cred_path=pending_path,
+        on_qr_url=on_qr_url,
         on_scanned=lambda: state.update(status="scanned"),
         on_expired=lambda: state.update(status="expired"),
         on_error=lambda err: state.update(status="error", error=str(err)),
     )
 
-    @bot.on_message
-    async def handle(msg):
-        await dispatch(bot, msg)
-
     try:
-        await bot.login()
-        state.update(status="confirmed")
-        await bot.start()
+        creds = await bot.login()
     except Exception as e:
         state.update(status="error", error=str(e))
+        pending_path.unlink(missing_ok=True)
+        return
+
+    # Re-file credentials under the account's own id so a restart can find
+    # and resume them without ever needing this login_id again.
+    account_path = CRED_DIR / f"{creds.account_id}.json"
+    pending_path.replace(account_path)
+    bot._cred_path = account_path  # keep any future credential writes consistent
+
+    state.update(status="confirmed")
+    live_bots[creds.account_id] = bot
+    await run_bot(bot)
 
 
-async def new_session(request: web.Request) -> web.Response:
-    session_id = uuid.uuid4().hex
-    sessions[session_id] = {
+async def resume_bound_accounts() -> None:
+    """On startup, reconnect every account that already has saved credentials."""
+    for path in CRED_DIR.glob("*.json"):
+        if path.name.startswith(".pending-"):
+            path.unlink(missing_ok=True)  # stale — login never finished
+            continue
+
+        bot = WeChatBot(
+            cred_path=path,
+            on_error=lambda err, name=path.stem: print(f"[{name}] {err}"),
+        )
+        try:
+            creds = await bot.login()
+        except Exception as e:
+            print(f"[resume] failed for {path.name}: {e}")
+            continue
+
+        live_bots[creds.account_id] = bot
+        asyncio.create_task(run_bot(bot))
+        print(f"[resume] reconnected account {creds.account_id}")
+
+
+async def new_login(request: web.Request) -> web.Response:
+    login_id = uuid.uuid4().hex
+    pending_logins[login_id] = {
         "status": "starting",
         "qr_url": None,
         "qr_png": None,
         "error": None,
     }
-    asyncio.create_task(run_session(session_id))
-    return web.json_response({"session_id": session_id})
+    asyncio.create_task(start_login(login_id))
+    return web.json_response({"login_id": login_id})
 
 
-async def session_status(request: web.Request) -> web.Response:
-    state = sessions.get(request.match_info["session_id"])
+async def login_status(request: web.Request) -> web.Response:
+    state = pending_logins.get(request.match_info["login_id"])
     if state is None:
         return web.json_response({"status": "not_found"}, status=404)
     return web.json_response(state)
@@ -90,10 +154,15 @@ async def index(request: web.Request) -> web.FileResponse:
     return web.FileResponse(BASE_DIR / "static" / "index.html")
 
 
-app = web.Application()
+async def on_startup(app: web.Application) -> None:
+    asyncio.create_task(resume_bound_accounts())
+
+
+app = web.Application(middlewares=[cors_middleware])
+app.on_startup.append(on_startup)
 app.router.add_get("/", index)
-app.router.add_post("/api/session", new_session)
-app.router.add_get("/api/session/{session_id}", session_status)
+app.router.add_post("/api/login", new_login)
+app.router.add_get("/api/login/{login_id}", login_status)
 
 if __name__ == "__main__":
-    web.run_app(app, port=8080)
+    web.run_app(app, port=PORT)

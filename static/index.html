@@ -22,6 +22,12 @@
   <div id="error"></div>
 
 <script>
+// When this page is deployed separately from web_multi.py (e.g. this file
+// on Cloudflare Pages, the backend on a VPS), point this at the backend's
+// full URL. Leave empty for local dev, where both are served from the
+// same origin by web_multi.py itself.
+const API_BASE = "";
+
 const startBtn = document.getElementById("start");
 const qrBox = document.getElementById("qr");
 const qrUrlBox = document.getElementById("qrurl");
@@ -50,8 +56,8 @@ function showQr(pngDataUri, url) {
   qrUrlBox.innerHTML = `<a href="${url}" target="_blank" rel="noopener">${url}</a>`;
 }
 
-async function poll(sessionId) {
-  const res = await fetch(`/api/session/${sessionId}`);
+async function poll(loginId) {
+  const res = await fetch(`${API_BASE}/api/login/${loginId}`);
   const data = await res.json();
 
   statusBox.textContent = STATUS_TEXT[data.status] || data.status;
@@ -77,11 +83,11 @@ startBtn.addEventListener("click", async () => {
   errorBox.textContent = "";
   statusBox.textContent = STATUS_TEXT.starting;
 
-  const res = await fetch("/api/session", { method: "POST" });
-  const { session_id } = await res.json();
+  const res = await fetch(`${API_BASE}/api/login`, { method: "POST" });
+  const { login_id } = await res.json();
 
   clearInterval(pollTimer);
-  pollTimer = setInterval(() => poll(session_id), 1500);
+  pollTimer = setInterval(() => poll(login_id), 1500);
   startBtn.disabled = false;
 });
 </script>

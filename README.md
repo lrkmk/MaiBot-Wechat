@@ -17,7 +17,7 @@ python bot.py
 
 ## demo 2：多用户 `web_multi.py`
 
-如果想让**别的用户也用上这个 bot**，因为每个账号要各自绑定，所以做法是：起一个网页，每个访客各自点一下按钮，各自拿到自己的二维码，各自扫码绑定各自的账号——服务端给每个 session 单独跑一个隔离的 `WeChatBot` 实例（独立凭证文件，存在 `.sessions/` 下）。
+如果想让**别的用户也用上这个 bot**，因为每个账号要各自绑定，所以做法是：起一个网页，每个访客各自点一下按钮，各自拿到自己的二维码，各自扫码绑定各自的账号——服务端给每个账号单独跑一个隔离的 `WeChatBot` 实例。
 
 ```bash
 pip install -r requirements.txt
@@ -26,7 +26,22 @@ python web_multi.py
 
 打开 `http://localhost:8080`，点"开始登录"，扫码；扫完之后可以在自己微信的 ClawBot 窗口里发 `/help` 试试。刷新页面/换个浏览器再点一次，就是另一个独立的账号绑定流程。
 
-`.sessions/` 目录是这个 demo 自己攒的每用户凭证缓存，纯本地演示用，不要提交到 git。
+**持久化**：登录成功后，凭证按微信账号自己的 iLink id 存成 `.sessions/{account_id}.json`（不是按浏览器 session 存）。服务重启时会自动扫这个目录，把每个已绑定账号重新连接上，不用再扫码。轮询用的 `login_id` 只是一个内存里的临时句柄，用来在还没登录成功前让浏览器查询"我这次扫码扫到哪一步了"，登录成功后就丢弃，不参与任何持久化。
+
+`.sessions/` 目录是这个 demo 自己攒的每账号凭证缓存，纯本地演示用，不要提交到 git（已在 `.gitignore` 里）。
+
+### 拆开部署：前端 Cloudflare Pages + 后端常驻服务器
+
+`web_multi.py` 是个跑长轮询的常驻 Python 进程（每个绑定账号一个 `bot.start()` 循环），Cloudflare Pages/Workers 这种"请求进来才执行"的模型跑不了它，所以要拆成两半：
+
+1. **后端** `web_multi.py` 部署到能跑常驻进程的地方（VPS、Fly.io、Railway 等）：
+   - 用环境变量配置：`PORT`（监听端口，很多 PaaS 会自动注入）、`ALLOWED_ORIGIN`（设成你 Pages 站点的完整 origin，比如 `https://your-project.pages.dev`；本地开发不设就默认 `*`）
+   - `.sessions/` 目录要挂载持久卷，否则每次重新部署凭证就没了，参见前面「持久化」那段
+2. **前端** `static/` 整个目录部署到 Cloudflare Pages（构建输出目录直接指向 `static`，不用挪文件），比如：
+   ```bash
+   npx wrangler pages deploy static --project-name=your-project
+   ```
+3. 把 `static/index.html` 里的 `const API_BASE = "";` 改成后端的完整 URL，比如 `const API_BASE = "https://your-backend.example.com";`，重新部署 Pages。
 
 ## 已支持命令（两个 demo 共用，见 `commands.py`）
 
