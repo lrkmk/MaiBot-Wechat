@@ -1,0 +1,89 @@
+<!doctype html>
+<html lang="zh">
+<head>
+<meta charset="utf-8">
+<title>ClawBot 多用户登录 Demo</title>
+<style>
+  body { font-family: system-ui, sans-serif; max-width: 420px; margin: 60px auto; text-align: center; }
+  button { font-size: 16px; padding: 8px 20px; cursor: pointer; }
+  #qr img { width: 220px; height: 220px; margin-top: 20px; }
+  #status { margin-top: 12px; color: #666; }
+  #error { color: #c00; margin-top: 12px; }
+  #qrurl { margin-top: 8px; font-size: 12px; color: #999; word-break: break-all; }
+</style>
+</head>
+<body>
+  <h1>扫码绑定你自己的 ClawBot</h1>
+  <p>每个访客点击下面的按钮都会拿到属于自己的二维码，绑定的是你自己的微信账号，互不影响。</p>
+  <button id="start">开始登录</button>
+  <div id="qr"></div>
+  <div id="qrurl"></div>
+  <div id="status"></div>
+  <div id="error"></div>
+
+<script>
+const startBtn = document.getElementById("start");
+const qrBox = document.getElementById("qr");
+const qrUrlBox = document.getElementById("qrurl");
+const statusBox = document.getElementById("status");
+const errorBox = document.getElementById("error");
+
+const STATUS_TEXT = {
+  starting: "正在生成二维码...",
+  waiting: "请使用微信扫码",
+  scanned: "已扫码，请在手机上确认",
+  confirmed: "登录成功！可以在微信 ClawBot 窗口里发 /help 试试",
+  expired: "二维码已过期，请重新开始",
+  error: "出错了",
+};
+
+let pollTimer = null;
+let shownQrUrl = null;
+
+// The server renders the QR itself (qr_png, a data: URI) because
+// qrcode_img_content is a plain link, not an image.
+function showQr(pngDataUri, url) {
+  if (url === shownQrUrl) return;  // don't re-render on every poll tick
+  shownQrUrl = url;
+
+  qrBox.innerHTML = `<img src="${pngDataUri}" alt="QR code">`;
+  qrUrlBox.innerHTML = `<a href="${url}" target="_blank" rel="noopener">${url}</a>`;
+}
+
+async function poll(sessionId) {
+  const res = await fetch(`/api/session/${sessionId}`);
+  const data = await res.json();
+
+  statusBox.textContent = STATUS_TEXT[data.status] || data.status;
+  errorBox.textContent = data.error || "";
+
+  if (data.qr_png && data.status === "waiting") {
+    showQr(data.qr_png, data.qr_url);
+  }
+
+  if (["confirmed", "expired", "error"].includes(data.status)) {
+    clearInterval(pollTimer);
+    if (data.status !== "confirmed") {
+      qrBox.replaceChildren();
+      qrUrlBox.replaceChildren();
+      shownQrUrl = null;
+    }
+  }
+}
+
+startBtn.addEventListener("click", async () => {
+  startBtn.disabled = true;
+  qrBox.innerHTML = "";
+  errorBox.textContent = "";
+  statusBox.textContent = STATUS_TEXT.starting;
+
+  const res = await fetch("/api/session", { method: "POST" });
+  const { session_id } = await res.json();
+
+  clearInterval(pollTimer);
+  pollTimer = setInterval(() => poll(session_id), 1500);
+  startBtn.disabled = false;
+});
+</script>
+</body>
+</html>

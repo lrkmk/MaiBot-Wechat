@@ -1,0 +1,11 @@
+{
+  "version": "0.0.1",
+  "configurations": [
+    {
+      "name": "web_multi",
+      "runtimeExecutable": "uv",
+      "runtimeArgs": ["run", "python", "web_multi.py"],
+      "port": 8080
+    }
+  ]
+}

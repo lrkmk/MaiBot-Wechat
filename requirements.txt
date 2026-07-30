@@ -1,0 +1,3 @@
+wechatbot-sdk
+aiohttp
+qrcode[pil]
