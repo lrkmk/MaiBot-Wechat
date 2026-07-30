@@ -1,10 +1,19 @@
 """Command handlers shared by the single-user and multi-user demos."""
 
+import re
 from datetime import datetime
+
+from storage import get_binding, set_binding
+
+# ── flat utility commands: /help, /echo, ... ────────────────────────────
+
+COMMANDS = {}
 
 
 async def cmd_help(bot, msg, args):
-    lines = ["可用命令："] + [f"/{name}" for name in sorted(COMMANDS)]
+    lines = ["可用命令："]
+    lines += [f"/{name}" for name in sorted(COMMANDS)]
+    lines += [f"/{game} {sub}" for game in sorted(GAMES) for sub in sorted(GAMES[game])]
     await bot.reply(msg, "\n".join(lines))
 
 
@@ -20,28 +29,63 @@ async def cmd_status(bot, msg, args):
     await bot.reply(msg, "运行中 ✅")
 
 
-COMMANDS = {
-    "help": cmd_help,
-    "echo": cmd_echo,
-    "time": cmd_time,
-    "status": cmd_status,
-}
+COMMANDS.update(help=cmd_help, echo=cmd_echo, time=cmd_time, status=cmd_status)
 
+
+# ── per-game commands: /mai bind, /mai <sub>, ... ───────────────────────
+# Namespaced so more games can be added later without touching dispatch().
+
+GAMES: dict[str, dict] = {}
+
+
+def game_command(game: str, sub: str):
+    """Register handler(bot, msg, arg) as `/<game> <sub> <arg>`."""
+
+    def decorator(func):
+        GAMES.setdefault(game, {})[sub] = func
+        return func
+
+    return decorator
+
+
+FRIEND_CODE_RE = re.compile(r"^\d{15}$")
+
+
+@game_command("mai", "bind")
+async def mai_bind(bot, msg, arg):
+    if not FRIEND_CODE_RE.match(arg):
+        await bot.reply(msg, "好友码必须是 15 位纯数字，用法：/mai bind <15位好友码>")
+        return
+    await set_binding(msg.user_id, "mai", arg)
+    await bot.reply(msg, f"已绑定 maimai 好友码：{arg}")
+
+
+# ── dispatch ─────────────────────────────────────────────────────────
 
 async def dispatch(bot, msg):
-    """Route an incoming message to the matching /command handler."""
+    """Route an incoming message to the matching /command or /<game> <sub> handler."""
     text = msg.text.strip()
 
     if not text.startswith("/"):
         await bot.reply(msg, "输入 /help 查看可用命令")
         return
 
-    name, _, args = text[1:].partition(" ")
-    handler = COMMANDS.get(name)
+    name, _, rest = text[1:].partition(" ")
+    await bot.send_typing(msg.user_id)
 
+    if name in GAMES:
+        sub, _, arg = rest.strip().partition(" ")
+        handler = GAMES[name].get(sub)
+        if handler is None:
+            usage = "\n".join(f"/{name} {s}" for s in sorted(GAMES[name]))
+            await bot.reply(msg, f"用法：\n{usage}")
+            return
+        await handler(bot, msg, arg.strip())
+        return
+
+    handler = COMMANDS.get(name)
     if handler is None:
         await bot.reply(msg, f"未知命令: /{name}\n输入 /help 查看可用命令")
         return
 
-    await bot.send_typing(msg.user_id)
-    await handler(bot, msg, args.strip())
+    await handler(bot, msg, rest.strip())

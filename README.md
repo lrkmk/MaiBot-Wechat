@@ -49,7 +49,28 @@ python web_multi.py
 - `/echo <文本>` — 原样返回文本
 - `/time` — 返回当前时间
 - `/status` — 返回运行状态
+- `/mai bind <15位好友码>` — 绑定 maimai 好友码（必须是 15 位纯数字），存到服务端
+
+## 持久化的用户数据（好友码等）
+
+`/mai bind` 这类"存点用户信息"的命令，数据存在 `data/bindings.json`，key 是 `msg.user_id`——也就是微信账号自己的稳定 id，不是 `web_multi.py` 里那个只在扫码阶段临时存在的 `login_id`（参见前面「持久化」那段）。所以不管重启多少次、也不管是单用户 `bot.py` 还是多用户 `web_multi.py`，同一个微信账号发的 `/mai bind` 记录都不会丢。
+
+`data/` 目录存的是真实用户信息，不要提交到 git（已在 `.gitignore` 里）。
 
 ## 扩展新命令
 
-在 `commands.py` 的 `COMMANDS` 字典里加一项 `"名字": handler`，`handler` 是 `async def handler(bot, msg, args)`，`args` 是命令名后面的剩余文本。两个 demo 都会自动拿到新命令。
+**普通命令**（不分游戏）：在 `commands.py` 的 `COMMANDS` 字典里加一项 `"名字": handler`，`handler` 是 `async def handler(bot, msg, args)`，`args` 是命令名后面的剩余文本。
+
+**游戏命令**（`/<game> <子命令> ...` 这种，为以后接入更多游戏的查询功能准备的）：用 `@game_command("游戏代号", "子命令")` 装饰一个 `async def handler(bot, msg, arg)`，比如加一个 `/mai query`：
+
+```python
+@game_command("mai", "query")
+async def mai_query(bot, msg, arg):
+    code = await get_binding(msg.user_id, "mai")
+    if code is None:
+        await bot.reply(msg, "还没绑定，先发 /mai bind <15位好友码>")
+        return
+    ...
+```
+
+两个 demo 都会自动拿到新命令。
