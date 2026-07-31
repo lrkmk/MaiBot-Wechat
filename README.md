@@ -45,11 +45,35 @@ python web_multi.py
 
 ## 已支持命令（两个 demo 共用，见 `commands.py`）
 
-- `/help` — 列出所有命令
-- `/echo <文本>` — 原样返回文本
-- `/time` — 返回当前时间
-- `/status` — 返回运行状态
-- `/mai bind <15位好友码>` — 绑定 maimai 好友码（必须是 15 位纯数字），存到服务端
+跑起来之后发 `/help` 看完整列表最准（会随命令增删自动更新）。目前包括 `/echo` `/time` `/status`，以及 `/mai bind` `/mai info` `/mai b50` `/mai b50img` `/mai apbest` `/mai best` `/mai song` `/mai recent` `/mai scores` `/mai heatmap` `/mai trend` `/mai history` `/mai collection` 这一串 maimai 查分相关命令（数据源是 [lxns.net](https://maimai.lxns.net) 的开发者 API + OAuth API）。
+
+## `/mai b50img`：图片版 Best 50
+
+用的是 [MeowKJ/maimai-rating-web](https://github.com/MeowKJ/maimai-rating-web) 这个开源前端项目渲染图片，但**不让它自己请求数据**——那个项目会把 lxns 开发者密钥打包进浏览器端 JS（谁看源码都能拿到），而且它按用户名/QQ 号识别数据源的逻辑跟我们按好友码存数据的方式对不上。做法是用 Playwright 起一个无头浏览器打开这个前端，拦截它请求 lxns 的两个接口，用我们自己已经查好的数据（跟 `/mai b50` 用的是同一份 `lxns_dev_client.py`）顶替响应，再截图 `.container` 这个节点发出去。
+
+**部署前需要先编译一次这个前端**（只在你自己电脑上做这一步，服务器不需要装 Node）：
+
+```bash
+git clone https://github.com/MeowKJ/maimai-rating-web.git
+cd maimai-rating-web
+echo "VITE_API_KEY=unused-requests-are-intercepted" > .env
+npm install -g pnpm
+pnpm install
+pnpm build
+cp -r dist ../wechat-command-bot/b50_frontend/dist
+```
+
+编译产物（`b50_frontend/dist/`）已经提交进这个仓库了，正常情况下不用你自己重新编译，除非上游那个项目更新了想跟着换版本。
+
+**服务器上需要装 Playwright 的浏览器内核**（这个不是 npm 包，是单独下载的二进制，装一次就行）：
+
+```bash
+uv run playwright install --with-deps chromium
+```
+
+`--with-deps` 会顺便装无头 Chrome 需要的系统依赖库（字体、libnss3 等），Amazon Linux 上可能需要 `sudo`。这个功能会在服务进程里额外起一个只监听 `127.0.0.1:5511` 的内部静态文件服务器（`b50_frontend_server.py`），只给同机的 Playwright 用，不用在安全组里开这个端口。
+
+无头 Chrome 每次调用大概占用几十到一百多 MB 内存，EC2 内存小的话（比如 t2.micro/t3.micro 免费额度）留意一下会不会被 OOM，必要的话可以加个 swap。
 
 ## 持久化的用户数据（好友码等）
 

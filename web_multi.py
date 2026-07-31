@@ -230,6 +230,9 @@ async def index(request: web.Request) -> web.FileResponse:
 
 async def on_startup(app: web.Application) -> None:
     asyncio.create_task(resume_bound_accounts())
+    import b50_frontend_server
+
+    await b50_frontend_server.start()
 
 
 app = web.Application(middlewares=[cors_middleware])

@@ -4,6 +4,7 @@ import re
 from datetime import datetime
 
 import lxns_dev_client as dev
+from b50_image import render_b50_image
 from lxns_client import LxnsError, get_player
 from lxns_dev_client import LxnsDevError
 from storage import get_binding, set_binding
@@ -154,6 +155,26 @@ async def mai_b50(bot, msg, arg):
         return
 
     await bot.reply(msg, _format_bests_block(bests, player.get("rating", "?")))
+
+
+@game_command("mai", "b50img")
+async def mai_b50img(bot, msg, arg):
+    """Best 50 图片版 — 渲染 https://github.com/MeowKJ/maimai-rating-web 的
+    页面截图，数据来自我们自己已经在查的开发者API，不让那边页面自己请求。"""
+    friend_code = await _require_friend_code(bot, msg)
+    if friend_code is None:
+        return
+
+    try:
+        image_bytes = await render_b50_image(friend_code)
+    except LxnsDevError as e:
+        await bot.reply(msg, str(e))
+        return
+    except Exception as e:
+        await bot.reply(msg, f"生成图片出错: {e}")
+        return
+
+    await bot.reply_media(msg, {"image": image_bytes})
 
 
 @game_command("mai", "apbest")
