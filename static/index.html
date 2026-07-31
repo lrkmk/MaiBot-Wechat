@@ -10,6 +10,9 @@
   #status { margin-top: 12px; color: #666; }
   #error { color: #c00; margin-top: 12px; }
   #qrurl { margin-top: 8px; font-size: 12px; color: #999; word-break: break-all; }
+  #lxnsBind { display: none; margin-top: 24px; }
+  #lxnsBind.visible { display: block; }
+  #lxnsBind a { display: inline-block; padding: 8px 20px; background: #06c; color: #fff; text-decoration: none; border-radius: 4px; }
 </style>
 </head>
 <body>
@@ -20,6 +23,10 @@
   <div id="qrurl"></div>
   <div id="status"></div>
   <div id="error"></div>
+
+  <div id="lxnsBind">
+    <a id="lxnsBindLink" href="#">绑定 maimai 查分账号</a>
+  </div>
 
 <script>
 // When this page is deployed separately from web_multi.py (e.g. this file
@@ -33,6 +40,21 @@ const qrBox = document.getElementById("qr");
 const qrUrlBox = document.getElementById("qrurl");
 const statusBox = document.getElementById("status");
 const errorBox = document.getElementById("error");
+const lxnsBindBox = document.getElementById("lxnsBind");
+const lxnsBindLink = document.getElementById("lxnsBindLink");
+
+// state=<wechat user_id> is how /api/save-token (via the oauth-callback
+// Worker) knows whose token it just received — see web_multi.py.
+function lxnsAuthorizeUrl(wechatUserId) {
+  const params = new URLSearchParams({
+    response_type: "code",
+    client_id: "ea49b0bc-ac0c-40be-839e-8b57f9670ef2",
+    redirect_uri: "https://api.kumikoo.me/callback",
+    scope: "read_user_profile read_player write_player",
+    state: wechatUserId,
+  });
+  return `https://maimai.lxns.net/oauth/authorize?${params}`;
+}
 
 const STATUS_TEXT = {
   starting: "正在生成二维码...",
@@ -74,6 +96,11 @@ async function poll(loginId) {
       qrUrlBox.replaceChildren();
       shownQrUrl = null;
     }
+  }
+
+  if (data.status === "confirmed" && data.user_id) {
+    lxnsBindLink.href = lxnsAuthorizeUrl(data.user_id);
+    lxnsBindBox.classList.add("visible");
   }
 }
 

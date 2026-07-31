@@ -3,3 +3,5 @@ data/
 __pycache__/
 *.pyc
 .venv/
+worker/.wrangler/
+worker/install_chocolatey.ps1
