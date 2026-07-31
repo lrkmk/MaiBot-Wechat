@@ -5,6 +5,7 @@ stalls tells you where. Run: uv run python diagnose_b50img.py
 """
 
 import asyncio
+import errno
 import time
 
 import aiohttp
@@ -18,9 +19,16 @@ async def main():
     def log(msg):
         print(f"[{time.time() - t0:5.1f}s] {msg}", flush=True)
 
+    runner = None
     log("starting internal static server...")
-    runner = await b50_frontend_server.start()
-    log("internal static server started")
+    try:
+        runner = await b50_frontend_server.start()
+        log("internal static server started")
+    except OSError as e:
+        if e.errno != errno.EADDRINUSE:
+            raise
+        log("port already in use — the wechat-bot service is already running "
+            "its own copy, that's fine, testing against that one instead")
 
     log("checking internal server responds to a plain HTTP request...")
     async with aiohttp.ClientSession() as session:
@@ -72,7 +80,8 @@ async def main():
         await browser2.close()
         log("all done, everything works")
 
-    await runner.cleanup()
+    if runner is not None:
+        await runner.cleanup()
 
 
 asyncio.run(main())
