@@ -40,7 +40,17 @@ async def render_b50_image(friend_code: str) -> bytes:
         # from) doesn't send Access-Control-Allow-Origin on some paths,
         # which otherwise blocks those images from rendering at all.
         browser = await p.chromium.launch(
-            args=["--disable-web-security", "--disable-site-isolation-trials"]
+            args=[
+                "--disable-web-security",
+                "--disable-site-isolation-trials",
+                # If the host has any system/env proxy configured, make sure
+                # it never applies to our own loopback server — a proxy
+                # trying to forward a 127.0.0.1 request is a classic way for
+                # page.goto() to hang instead of erroring. External asset
+                # fetches (lxns.net, mpas.top) still go through the proxy
+                # normally, only loopback is bypassed.
+                "--proxy-bypass-list=127.0.0.1;localhost",
+            ]
         )
         try:
             page = await browser.new_page(viewport={"width": 900, "height": 1600})
@@ -54,13 +64,15 @@ async def render_b50_image(friend_code: str) -> bytes:
             await page.route("**/api/v0/maimai/player/qq/**", fulfill_player)
             await page.route("**/api/v0/maimai/player/*/bests", fulfill_bests)
 
-            await page.goto(
-                f"http://127.0.0.1:{PORT}/{DUMMY_ROUTE_PARAM}", wait_until="networkidle"
-            )
+            # "networkidle" is flaky here — this page has some background
+            # network activity that never goes fully quiet, so that wait
+            # condition intermittently never resolves and hangs forever.
+            # "load" + a fixed extra wait is slower but actually reliable.
+            await page.goto(f"http://127.0.0.1:{PORT}/{DUMMY_ROUTE_PARAM}", wait_until="load")
             # Song-list metadata fetch (~1.2MB, real network call to
-            # lxns.net, not intercepted — it's a public endpoint) needs
-            # more than networkidle's quiet-window to fully parse+render.
-            await page.wait_for_timeout(8000)
+            # lxns.net, not intercepted — it's a public endpoint) plus
+            # rendering all the charts takes a while after `load` fires.
+            await page.wait_for_timeout(10000)
 
             return await page.locator(".container").screenshot(type="png")
         finally:

@@ -1,5 +1,6 @@
 """Command handlers shared by the single-user and multi-user demos."""
 
+import asyncio
 import re
 from datetime import datetime
 
@@ -166,7 +167,10 @@ async def mai_b50img(bot, msg, arg):
         return
 
     try:
-        image_bytes = await render_b50_image(friend_code)
+        image_bytes = await asyncio.wait_for(render_b50_image(friend_code), timeout=45)
+    except asyncio.TimeoutError:
+        await bot.reply(msg, "生成图片超时（45秒），服务器可能是无头浏览器起不来，先用 /mai b50 看文字版")
+        return
     except LxnsDevError as e:
         await bot.reply(msg, str(e))
         return
