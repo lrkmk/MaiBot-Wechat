@@ -231,12 +231,21 @@ async def index(request: web.Request) -> web.FileResponse:
 async def on_startup(app: web.Application) -> None:
     asyncio.create_task(resume_bound_accounts())
     import b50_frontend_server
+    import b50_image
 
     await b50_frontend_server.start()
+    await b50_image.start_browser()
+
+
+async def on_cleanup(app: web.Application) -> None:
+    import b50_image
+
+    await b50_image.stop_browser()
 
 
 app = web.Application(middlewares=[cors_middleware])
 app.on_startup.append(on_startup)
+app.on_cleanup.append(on_cleanup)
 app.router.add_get("/", index)
 app.router.add_post("/api/login", new_login)
 app.router.add_get("/api/login/{login_id}", login_status)
