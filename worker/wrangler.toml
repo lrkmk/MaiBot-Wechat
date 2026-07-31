@@ -5,3 +5,15 @@ compatibility_date = "2026-07-31"
 routes = [
   { pattern = "api.kumikoo.me/callback*", zone_name = "kumikoo.me" }
 ]
+
+# Non-secret only — OAUTH_CLIENT_SECRET and BACKEND_SECRET stay as
+# Dashboard/CLI-managed Secrets (`wrangler secret put`), never in this file.
+# `wrangler deploy` treats [vars] as the full source of truth and wipes any
+# plain Text var not listed here, so keep this in sync with the Dashboard.
+[vars]
+OAUTH_TOKEN_URL = "https://maimai.lxns.net/api/v0/oauth/token"
+OAUTH_CLIENT_ID = "ea49b0bc-ac0c-40be-839e-8b57f9670ef2"
+OAUTH_REDIRECT_URI = "https://api.kumikoo.me/callback"
+BACKEND_SAVE_URL = "https://api.kumikoo.me/api/save-token"
+FRONTEND_SUCCESS_URL = "https://mai.kumikoo.me/"
+FRONTEND_ERROR_URL = "https://mai.kumikoo.me/"
