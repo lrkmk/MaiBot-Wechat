@@ -4,6 +4,8 @@ import re
 from datetime import datetime
 
 from lxns_client import LxnsError, get_player
+from lxns_dev_client import LxnsDevError
+from lxns_dev_client import get_bests as dev_get_bests
 from storage import get_binding, set_binding
 
 # ── flat utility commands: /help, /echo, ... ────────────────────────────
@@ -72,14 +74,45 @@ async def mai_info(bot, msg, arg):
         await bot.reply(msg, f"查询出错: {e}")
         return
 
-    # Haven't verified real field names yet (no live OAuth-bound account to
-    # test against) — best guess based on lxns's usual naming. If this
-    # comes back wrong once tested, check the actual response shape and
-    # adjust the .get() keys below.
     lines = [
         f"昵称: {player.get('name', '?')}",
         f"Rating: {player.get('rating', '?')}",
     ]
+    await bot.reply(msg, "\n".join(lines))
+
+
+@game_command("mai", "b50")
+async def mai_b50(bot, msg, arg):
+    """Best 50 via the developer API (friend_code from /mai bind) — no
+    OAuth token needed, works for anyone who's enabled 允许第三方访问."""
+    friend_code = await get_binding(msg.user_id, "mai")
+    if friend_code is None:
+        await bot.reply(msg, "还没绑定好友码，先发 /mai bind <15位好友码>")
+        return
+
+    try:
+        bests = await dev_get_bests(friend_code)
+    except LxnsDevError as e:
+        await bot.reply(msg, str(e))
+        return
+    except Exception as e:
+        await bot.reply(msg, f"查询出错: {e}")
+        return
+
+    standard_total = bests.get("standard_total", 0)
+    dx_total = bests.get("dx_total", 0)
+    top_songs = sorted(
+        bests.get("standard", []) + bests.get("dx", []),
+        key=lambda s: s.get("dx_rating", 0),
+        reverse=True,
+    )[:5]
+
+    lines = [f"Rating: {standard_total + dx_total} (旧{standard_total} + 新{dx_total})", ""]
+    for s in top_songs:
+        lines.append(
+            f"{s.get('song_name', '?')} [{s.get('level', '?')}] "
+            f"{s.get('achievements', '?')}% -> {s.get('dx_rating', '?')}"
+        )
     await bot.reply(msg, "\n".join(lines))
 
 
