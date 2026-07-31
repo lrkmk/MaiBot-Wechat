@@ -81,13 +81,39 @@ async def mai_info(bot, msg, arg):
     await bot.reply(msg, "\n".join(lines))
 
 
+async def resolve_friend_code(user_id: str) -> str | None:
+    """/mai bind's stored code, or — if the user's done OAuth instead —
+    derive it from their Player data (which already includes friend_code)
+    and cache it so future calls skip the OAuth round-trip entirely."""
+    friend_code = await get_binding(user_id, "mai")
+    if friend_code:
+        return friend_code
+
+    try:
+        player = await get_player(user_id)
+    except Exception:
+        return None
+
+    friend_code = str(player.get("friend_code", "")).strip()
+    if not FRIEND_CODE_RE.match(friend_code):
+        return None
+
+    await set_binding(user_id, "mai", friend_code)
+    return friend_code
+
+
 @game_command("mai", "b50")
 async def mai_b50(bot, msg, arg):
-    """Best 50 via the developer API (friend_code from /mai bind) — no
-    OAuth token needed, works for anyone who's enabled 允许第三方访问."""
-    friend_code = await get_binding(msg.user_id, "mai")
+    """Best 50 via the developer API — works off a bound friend_code,
+    manually set via /mai bind or auto-derived from a completed OAuth
+    binding (see resolve_friend_code); no OAuth token needed per call."""
+    friend_code = await resolve_friend_code(msg.user_id)
     if friend_code is None:
-        await bot.reply(msg, "还没绑定好友码，先发 /mai bind <15位好友码>")
+        await bot.reply(
+            msg,
+            "还没绑定好友码——发 /mai bind <15位好友码>，"
+            '或者在网页上点"绑定 maimai 查分账号"完成授权也行',
+        )
         return
 
     try:
