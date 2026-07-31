@@ -178,7 +178,10 @@ async def mai_b50img(bot, msg, arg):
         await bot.reply(msg, f"生成图片出错: {e}")
         return
 
-    await bot.reply_media(msg, {"image": image_bytes})
+    try:
+        await bot.reply_media(msg, {"image": image_bytes})
+    except Exception as e:
+        await bot.reply(msg, f"图片生成好了但发送失败: {e}")
 
 
 @game_command("mai", "apbest")
