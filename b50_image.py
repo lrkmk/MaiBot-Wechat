@@ -74,6 +74,10 @@ async def render_b50_image(friend_code: str) -> bytes:
             # rendering all the charts takes a while after `load` fires.
             await page.wait_for_timeout(10000)
 
-            return await page.locator(".container").screenshot(type="png")
+            # JPEG, not PNG: this page is a long scrolling screenshot (tall,
+            # colorful, lots of gradients/photos) so PNG comes out quite
+            # large — the reference project itself exports as JPEG for the
+            # same reason (see capture.ts: toDataURL("image/jpeg", 0.95)).
+            return await page.locator(".container").screenshot(type="jpeg", quality=90)
         finally:
             await browser.close()
