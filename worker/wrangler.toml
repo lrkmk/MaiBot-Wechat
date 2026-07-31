@@ -3,5 +3,5 @@ main = "oauth-callback-worker.js"
 compatibility_date = "2026-07-31"
 
 routes = [
-  { pattern = "api.kumikoo.me/callback", zone_name = "kumikoo.me" }
+  { pattern = "api.kumikoo.me/callback*", zone_name = "kumikoo.me" }
 ]
