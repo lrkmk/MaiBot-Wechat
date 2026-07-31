@@ -3,6 +3,7 @@
 import re
 from datetime import datetime
 
+from lxns_client import LxnsError, get_player
 from storage import get_binding, set_binding
 
 # ── flat utility commands: /help, /echo, ... ────────────────────────────
@@ -58,6 +59,28 @@ async def mai_bind(bot, msg, arg):
         return
     await set_binding(msg.user_id, "mai", arg)
     await bot.reply(msg, f"已绑定 maimai 好友码：{arg}")
+
+
+@game_command("mai", "info")
+async def mai_info(bot, msg, arg):
+    try:
+        player = await get_player(msg.user_id)
+    except LxnsError as e:
+        await bot.reply(msg, str(e))
+        return
+    except Exception as e:
+        await bot.reply(msg, f"查询出错: {e}")
+        return
+
+    # Haven't verified real field names yet (no live OAuth-bound account to
+    # test against) — best guess based on lxns's usual naming. If this
+    # comes back wrong once tested, check the actual response shape and
+    # adjust the .get() keys below.
+    lines = [
+        f"昵称: {player.get('name', '?')}",
+        f"Rating: {player.get('rating', '?')}",
+    ]
+    await bot.reply(msg, "\n".join(lines))
 
 
 # ── dispatch ─────────────────────────────────────────────────────────
